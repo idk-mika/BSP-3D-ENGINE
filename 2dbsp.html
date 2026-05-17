@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>about:blank</title>
+    <style>
+        canvas { border: 3px solid black; }
+    </style>
+</head>
+<body>
+
+<canvas id="c" width="900" height="700"></canvas>
+
+<script>
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    
+    class Node {
+        constructor(lineid) {
+            this.lineid = lineid;
+            this.front = null;
+            this.back = null;
+        }
+    }
+    
+    class Wall {
+        constructor(x1,y1,x2,y2) {
+            this.x1=x1; this.y1=y1;
+            this.x2=x2; this.y2=y2;
+        }
+    }
+    
+    let walls = [];
+    function addWall(x1,y1,x2,y2){
+        walls.push(new Wall(x1,y1,x2,y2));
+    }
+    
+    function whichSide(px,py,line){
+        return ((line.x2-line.x1)*(py-line.y1)) - ((line.y2-line.y1)*(px-line.x1));
+    }
+    
+    function getIntersection(l1, l2) {
+        const den = (l1.x1 - l1.x2) * (l2.y1 - l2.y2) - (l1.y1 - l1.y2) * (l2.x1 - l2.x2);
+        if (den === 0) return null;
+    
+        const t = ((l1.x1 - l2.x1) * (l2.y1 - l2.y2) - (l1.y1 - l2.y1) * (l2.x1 - l2.x2)) / den;
+    
+        return {
+            x: l1.x1 + t * (l1.x2 - l1.x1),
+            y: l1.y1 + t * (l1.y2 - l1.y1)
+        };
+    }
+    
+    function buildBSP(list){
+        if(list.length === 0) return null;
+    
+        let node = new Node(list[0]);
+        let front=[], back=[];
+    
+        let splitter = walls[node.lineid];
+    
+        for(let i=1;i<list.length;i++){
+            let id = list[i];
+            let w = walls[id];
+    
+            let t1 = whichSide(w.x1,w.y1,splitter);
+            let t2 = whichSide(w.x2,w.y2,splitter);
+    
+            if(t1 >= 0 && t2 >= 0){
+                front.push(id);
+            }
+            else if(t1 <= 0 && t2 <= 0){
+                back.push(id);
+            }
+            else {
+                // ✅ SPLIT WALL
+                let hit = getIntersection(w, splitter);
+                if(!hit) continue;
+    
+                // first half of wall
+                let w1 = new Wall(w.x1, w.y1, hit.x, hit.y);
+                // second half of wall
+                let w2 = new Wall(hit.x, hit.y, w.x2, w.y2);
+                // replace original with first half
+                walls[id] = w1;
+                // add new wall to walls and get its index
+                walls.push(w2);
+                let newID = walls.length - 1;
+    
+                if(t1 > 0){
+                    front.push(id);
+                    back.push(newID);
+                } else {
+                    back.push(id);
+                    front.push(newID);
+                }
+            }
+        }
+        
+        node.front = buildBSP(front);
+        node.back = buildBSP(back);
+    
+        return node;
+    }
+    
+    // TRAVERSE
+    let render_order = [];
+    
+    function traverse(px,py,node){
+        if(!node) return;
+    
+        let side = whichSide(px,py,walls[node.lineid]);
+    
+        if(side > 0){
+            traverse(px,py,node.back);
+            render_order.push(node.lineid);
+            traverse(px,py,node.front);
+        } else {
+            traverse(px,py,node.front);
+            render_order.push(node.lineid);
+            traverse(px,py,node.back);
+        }
+    }
+    
+    // PLAYER
+    let player = {x: 200, y: 200};
+    let keys = {};
+    
+    document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+    document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+    
+    function updatePlayer(){
+        let speed = 3;
+        if(keys["w"]) player.y -= speed;
+        if(keys["s"]) player.y += speed;
+        if(keys["a"]) player.x -= speed;
+        if(keys["d"]) player.x += speed;
+    }
+    
+    // DRAW
+    function drawWall(w, index){
+        let hue = (index * 40) % 360;
+        ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
+        ctx.lineWidth = 3;
+    
+        ctx.beginPath();
+        ctx.moveTo(w.x1,w.y1);
+        ctx.lineTo(w.x2,w.y2);
+        ctx.stroke();
+    
+        let mx = (w.x1 + w.x2)/2;
+        let my = (w.y1 + w.y2)/2;
+    
+        ctx.fillStyle = "black";
+        ctx.fillText(index, mx, my);
+    }
+    
+    walls = [];
+
+// Outer box
+addWall(200,150,700,150);
+addWall(700,150,700,500);
+addWall(700,500,200,500);
+addWall(200,500,200,150);
+
+// ONE diagonal (this is the key split test)
+addWall(200,150,700,500);
+
+// One vertical through it (forces a split)
+addWall(450,150,450,500);
+
+let root = buildBSP([...walls.keys()]);
+    // LOOP
+    function loop(){
+        updatePlayer();
+    
+        render_order = [];
+        traverse(player.x, player.y, root);
+    
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+    
+        render_order.forEach((id,i)=>{
+            drawWall(walls[id], i);
+        });
+    
+        ctx.fillStyle = "red";
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 5, 0, Math.PI*2);
+        ctx.fill();
+    
+        requestAnimationFrame(loop);
+    }
+    
+    loop();
+    </script>
+
+</body>
+</html>

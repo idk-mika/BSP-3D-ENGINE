@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3dBSPreworked</title>
+    <style>
+        canvas {
+            border: 5px solid #000000; /* Adds a visible border to the canvas */
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="myCanvas" width="900" height="700">
+        Your browser does not support the HTML canvas tag.
+    </canvas>
+
+    <script>
+        class Node {
+            constructor(id) {
+                this.id=id;
+                this.back=null
+                this.front=null
+            }
+        }
+        class Point {
+            constructor(x,y,z){
+                this.x = x;
+                this.y = y;
+                this.z = z;
+            }
+        }
+        class Triangle {
+            constructor(pt1,pt2,pt3){
+                this.pt1 = pt1;
+                this.pt2 = pt2;
+                this.pt3 = pt3;
+            }
+        }
+        class Plane {
+            constructor(pos,normal){
+                this.pos = pos;
+                this.normal = normal;
+            }
+        }
+        class Line {
+            constructor(p1,p2){
+                this.p1 = p1;
+                this.p2 = p2;
+            }
+        }
+        function WhichSide(plane_norm,point,plane_pos) {
+            let bx = point.x - plane_pos.x;
+            let by = point.y - plane_pos.y;
+            let bz = point.z - plane_pos.z;
+            return((plane_norm.x * bx)+(plane_norm.y * by)+(plane_norm.z * bz));
+        }
+        var nx = []; var ny = []; var nz = [];
+        function calc_normal(tri) {
+            let ax = tri.pt2.x - tri.pt1.x;
+            let ay = tri.pt2.y - tri.pt1.y;
+            let az = tri.pt2.z - tri.pt1.z;
+            let bx = tri.pt3.x - tri.pt1.x;
+            let by = tri.pt3.y - tri.pt1.y;
+            let bz = tri.pt3.z - tri.pt1.z;
+            let cnx = ay * bz - az * by;
+            let cny = az * bx - ax * bz;
+            let cnz = ax * by - ay * bx;
+            let length = Math.sqrt(cnx * cnx + cny * cny + cnz * cnz);   
+            nx.push (cnx / length);
+            ny.push (cny / length);
+            nz.push (cnz / length);
+        }
+        function Calc_Normals() {
+            triangles.forEach((tri) => {
+                calc_normal(tri);
+            })
+        }
+        function Line_vs_Plane(p1, p2, plane) {
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            let dz = p2.z - p1.z;
+            let dot = (plane.normal.x * dx) + (plane.normal.y * dy) + (plane.normal.z * dz);
+            if (Math.abs(dot) < 0.000001) return null;
+                let dist = WhichSide(plane.normal, p1, plane.pos);
+                let t = -dist / dot;
+                return new Point(
+                p1.x + (t * dx),
+                p1.y + (t * dy),
+                p1.z + (t * dz)
+            );
+        }
+        function BuildBSP(list) {
+            if (list.length === 0) {
+                return
+            }
+            let front = [];
+            let back = [];
+            let partition_node = new Node(list[0]);
+            let partition = triangles[partition_node.id]
+            for (let index = 1; index < list.length; index++) {
+                id = list[index];
+                tri_vs_plane_3d(new Point(nx[(partition_node.id)],ny[partition_node.id],nz[partition_node.id]),partition.pt1,triangles[id],front,back);
+            }
+            partition_node.front = BuildBSP(front);
+            partition_node.back = BuildBSP(back);
+            return partition_node
+        }
+        function tri_vs_plane_3d (Plane_norm,Plane_pos,tripos,tfront,tback) {
+            let temparr = [tripos.pt1, tripos.pt2, tripos.pt3];
+            let behind = temparr.filter(pt => WhichSide(Plane_norm, pt,Plane_pos) < 0);
+            let front = temparr.filter(pt => WhichSide(Plane_norm, pt,Plane_pos) > 0); 
+            var templine
+            if (behind.length===0) {
+                tfront.push(id);
+                return
+            } else if (front.length===0) {
+                tback.push(id);
+                return
+            } else if (behind.length===2&&front.length===1) {
+                let frontval = front[0];
+                var line2check1 = new Line(frontval,behind[0]);
+                var line2check2 = new Line(frontval,behind[1]);
+            } else {
+                if (behind.length===1&&front.length===2) {
+                    let backval = behind[0];
+                    var line2check1 = new Line(backval,front[0]);
+                    var line2check2 = new Line(backval,front[1]);
+                } else if(behind.length === 1 && front.length === 1) {
+                    let line2check1 = temparr.find(pt => Math.abs(WhichSide(Plane_norm, pt, Plane_pos)) < 0.000001);
+                    let line2check2 = Line_vs_Plane(front[0], behind[0], new Plane(Plane_pos, Plane_norm));
+                    templine = new Line(line2check1, line2check2);
+                }
+            }         
+            return new Line(Line_vs_Plane(templine.p1,templine.p2,new Plane(Plane_pos,Plane_norm)), Line_vs_Plane(templine.p1,templine.p2,new Plane(Plane_pos,Plane_norm)));        
+        }
+        var render_order = [];
+        function TraverseTree(node,point) {
+            if (!node) return
+            if (WhichSide(new Point(nx[node.id],ny[node.id],nz[node.id]),point,triangles[node.id].pt1)>0) {
+                TraverseTree(node.back,point);
+                render_order.push(node.id);
+                TraverseTree(node.front,point);
+            } else {
+                TraverseTree(node.front,point);
+                render_order.push(node.id);
+                TraverseTree(node.back,point);
+            }
+        }
+        class Matrix {
+            constructor(r11, r12, r13, r21, r22, r23, r31, r32, r33) {
+                this.r11 = r11;
+                this.r12 = r12;
+                this.r13 = r13;
+                this.r21 = r21;
+                this.r22 = r22;
+                this.r23 = r23;
+                this.r31 = r31;
+                this.r32 = r32;
+                this.r33 = r33;
+            }
+        }
+
+        var triangles = [];
+        var colors = [];
+        addTriangle = function(pt1,pt2,pt3) {
+            triangles.push(new Triangle(pt1, pt2, pt3));
+        }
+        const canvas = document.getElementById("myCanvas");
+        const drawingContext = canvas.getContext("2d");
+        function Add_Triangle(x1,y1,z1,x2,y2,z2,x3,y3,z3,r,g,b) {
+            var p1 = new Point(x1,y1,z1)
+            var p2 = new Point(x2,y2,z2)
+            var p3 = new Point(x3,y3,z3)
+            triangles.push(new Triangle(p1,p2,p3));
+            colors.push(new Point(r,g,b));
+        }
+        function fill(r, g, b, a = 255) {
+            drawingContext.fillStyle = `rgba(${r}, ${g}, ${b}, ${a / 255})`;
+        }
+        var rotx = 0
+        var roty = 0
+        function triangle(x1, y1, x2, y2, x3, y3) {
+            drawingContext.beginPath();
+            drawingContext.moveTo(x1, y1);
+            drawingContext.lineTo(x2, y2);
+            drawingContext.lineTo(x3, y3);
+            drawingContext.closePath();
+            drawingContext.fill();
+        }
+        function mainLoop (){
+            requestAnimationFrame(draw);
+            console.log(render_order);
+            //repeat loop
+            requestAnimationFrame(mainLoop);
+        }
+        function draw() {
+            drawingContext.clearRect(0, 0, canvas.width, canvas.height);
+            MoveCamera()
+            TraverseTree(bspTree,camPos)
+            SetRotmatrix(Math.cos(rotx),Math.sin(rotx),Math.cos(roty),Math.sin(roty))
+            render_order.forEach((i) => {
+            tri = triangles[i];
+            fill(colors[i].x, colors[i].y, colors[i].z);
+            var trp1 = new Point(tri.pt1.x-camPos.x,tri.pt1.y-camPos.y,tri.pt1.z-camPos.z);
+            var trp2 = new Point(tri.pt2.x-camPos.x,tri.pt2.y-camPos.y,tri.pt2.z-camPos.z);
+            var trp3 = new Point(tri.pt3.x-camPos.x,tri.pt3.y-camPos.y,tri.pt3.z-camPos.z); 
+            var tp1 = new Point((trp1.x*rotmatrix.r11)+(trp1.z*rotmatrix.r13),(trp1.x*rotmatrix.r21)+((trp1.y*rotmatrix.r22)+(trp1.z*rotmatrix.r23)),(trp1.x*rotmatrix.r31)+((trp1.y*rotmatrix.r32)+(trp1.z*rotmatrix.r33)));
+            var tp2 = new Point((trp2.x*rotmatrix.r11)+(trp2.y*rotmatrix.r12)+(trp2.z*rotmatrix.r13),(trp2.x*rotmatrix.r21)+((trp2.y*rotmatrix.r22)+(trp2.z*rotmatrix.r23)),(trp2.x*rotmatrix.r31)+((trp2.y*rotmatrix.r32)+(trp2.z*rotmatrix.r33)));
+            var tp3 = new Point((trp3.x*rotmatrix.r11)+(trp3.y*rotmatrix.r12)+(trp3.z*rotmatrix.r13),(trp3.x*rotmatrix.r21)+((trp3.y*rotmatrix.r22)+(trp3.z*rotmatrix.r23)),(trp3.x*rotmatrix.r31)+((trp3.y*rotmatrix.r32)+(trp3.z*rotmatrix.r33)));
+            triangle(-600* (tp1.x) / (tp1.z)+450, 
+                     -600* (tp1.y) / (tp1.z)+350,
+                     -600* (tp2.x) / (tp2.z)+450, 
+                     -600* (tp2.y) / (tp2.z)+350, 
+                     -600* (tp3.x) / (tp3.z)+450, 
+                     -600* (tp3.y) / (tp3.z)+350);
+
+        });
+        }
+        var keys = {};
+        var rotmatrix = new Matrix(0,0,0,0,0,0,0,0,0);
+        function SetRotmatrix(cosx,sinx,cosy,siny){
+            rotmatrix = new Matrix(cosx, 0, sinx, sinx*siny, cosy, -(cosx*siny), -(cosy*sinx), siny, cosx*cosy);
+        }
+        canvas.addEventListener("click", function() {
+        canvas.requestPointerLock();
+        });
+
+        document.addEventListener("mousemove", function(e) {
+            if (document.pointerLockElement === canvas) {
+                roty += e.movementY * -0.002;
+                rotx += e.movementX * 0.002;
+            }
+        });
+    
+        document.addEventListener("keydown", function(e) {
+        keys[e.key] = true;
+        });
+        document.addEventListener("keyup", function(e) {
+        keys[e.key] = false;
+        });
+        function MoveCamera() {
+        var speed = 10;
+        if (keys[" "])     camPos.y -= speed;
+        if (keys["Shift"]) camPos.y += speed;
+        if (keys["a"])     camPos.x -= speed;
+        if (keys["d"])     camPos.x += speed;
+        if (keys["w"])     camPos.z -= speed;
+        if (keys["s"])     camPos.z += speed;
+    }
+       
+       
+        //init do all things u need for it to start here
+        //ai map
+        // Clear any previous test geometry
+        triangles = [];
+        nx = [];
+        ny = [];
+        nz = [];
+        //bottom
+        Add_Triangle(-200, 200, -100,  200, 200, -100,  200, 200, -500);
+
+        // CEILING (y = -200, horizontal plane)
+        Add_Triangle(-200, -200, -100,  200, -200, -500,  200, -200, -100, 255, 0, 0);
+
+        // BACK WALL (z = -500, vertical plane facing forward)
+        Add_Triangle(-200, -200, -500,  200, -200, -500,  200,  200, -500, 0, 255, 0);
+
+        // LEFT WALL (x = -200, vertical plane facing right)
+        Add_Triangle(-200, -200, -500, -200,  200, -500, -200,  200, -100, 0, 0, 255);
+
+        // RIGHT WALL (x = 200, vertical plane facing left)
+        Add_Triangle( 200, -200, -100,  200,  200, -100,  200,  200, -500, 255, 255, 0);
+
+        // FRONT WALL / ENTRANCE (z = -100, vertical plane facing backward)
+        Add_Triangle( 200, -200, -100, -200, -200, -100, -200,  200, -100, 0, 255, 255);
+
+        // Initialize Camera inside the clean room structure
+        var camPos = new Point(0, 0, 1000);
+
+        // Compile the non-splitting map
+        Calc_Normals();
+
+        // Create an index list containing all 12 triangles [0, 1, 2, ..., 11]
+        let mapIndexs = Array.from({length: triangles.length}, (_, i) => i);
+        var bspTree = BuildBSP(mapIndexs); 
+        //start!!
+        requestAnimationFrame(mainLoop);
+        
+        </script>
+
+</body>
+</html>
